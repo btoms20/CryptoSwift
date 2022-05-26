@@ -190,6 +190,82 @@ final class RSATests: XCTestCase {
     XCTAssertEqual(decrypted, message, "encrypt+decrypt failed")
   }
 
+//  func testSignature_1024_PKCS1v15_SHA256() throws {
+//    let expectedEncryption: Array<UInt8> = [
+//      0x76, 0xEB, 0x7F, 0x10, 0x95, 0x40, 0xC9, 0x19, 0xE6, 0x44, 0x6F, 0xCD, 0x88, 0x83, 0x22, 0x6E,
+//      0x5C, 0xE4, 0x1E, 0x87, 0xE3, 0xAF, 0x3B, 0x59, 0xB7, 0xB2, 0x89, 0xFD, 0x88, 0x37, 0xC0, 0xCE,
+//      0xEA, 0x0E, 0x87, 0x06, 0x5F, 0x6E, 0xE7, 0x8C, 0xE9, 0x3F, 0xD6, 0xC3, 0xE0, 0x0B, 0x94, 0x19,
+//      0xAC, 0x58, 0x2D, 0x73, 0xD3, 0x92, 0x45, 0x2C, 0x66, 0x7F, 0xB5, 0x24, 0xC6, 0xEA, 0xC6, 0xE2,
+//      0x0E, 0xBB, 0x12, 0x86, 0x5B, 0xF4, 0x1D, 0x25, 0x2F, 0x68, 0x69, 0x30, 0x80, 0x4D, 0x10, 0xDF,
+//      0x25, 0x5E, 0x00, 0x1D, 0x2F, 0x5F, 0x67, 0xE5, 0x4C, 0x7D, 0x1E, 0x64, 0xB2, 0x0B, 0xE8, 0x19,
+//      0xE6, 0xB8, 0x62, 0xA6, 0xD1, 0x66, 0x58, 0x47, 0xAC, 0xAB, 0xAB, 0xCD, 0x26, 0x3D, 0x16, 0x52,
+//      0xBF, 0x35, 0xB0, 0x21, 0xE2, 0xE3, 0x48, 0x77, 0x1E, 0x81, 0xE8, 0xCF, 0x75, 0x67, 0x64, 0x2A
+//    ]
+//
+//    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE)
+//    XCTAssertNotNil(rsa.d)
+//
+//    let encrypted = try rsa.sign("Hello RSA Signatures! This message was signed with PKCS1v15 padding and hashed with SHA256.".bytes, variant: .pkcs1v15_SHA256)
+//
+//    XCTAssertEqual(encrypted, expectedEncryption)
+//  }
+    
+    
+  // MARK: PEM & DER Tests
+  func testImportPublicDER() throws {
+    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PUBLIC_DER)
+    print(rsa)
+  
+    let base64 = PEMFixtures.RSA_1024_PUBLIC_DER.split(separator: "\n").dropFirst().dropLast().joined()
+    let derData = Data(base64Encoded: base64)
+    XCTAssertEqual(rsa.publicKeyExternalRepresentation(), derData?.bytes)
+  }
+  
+  func testImportPublicPEM_1024() throws {
+    let publicPEMS = [
+      PEMFixtures.RSA_1024_PUBLIC,
+      PEMFixtures.RSA_2048_PUBLIC,
+      PEMFixtures.RSA_3072_PUBLIC,
+      PEMFixtures.RSA_4096_PUBLIC
+    ]
+  
+    for pem in publicPEMS {
+      let rsa = try RSA(pem: pem)
+  
+      let base64 = pem.split(separator: "\n").dropFirst().dropLast().joined()
+      let pemData = Data(base64Encoded: base64)
+      XCTAssertEqual(try rsa.exportPublicKeyPEM(), pemData?.bytes)
+  
+      XCTAssertEqual(try rsa.exportPublicKeyPEMString(), pem)
+    }
+  }
+  
+  func testImportPrivatePEM_1024() throws {
+    let privatePEMS = [
+      PEMFixtures.RSA_1024_PRIVATE,
+      PEMFixtures.RSA_2048_PRIVATE,
+      PEMFixtures.RSA_3072_PRIVATE,
+      PEMFixtures.RSA_4096_PRIVATE
+    ]
+  
+    for pem in privatePEMS {
+      let rsa = try RSA(pem: pem)
+      XCTAssertNotNil(rsa.d)
+  
+      let base64 = pem.split(separator: "\n").dropFirst().dropLast().joined()
+      let pemData = Data(base64Encoded: base64)
+      XCTAssertEqual(try rsa.exportPrivateKeyPEM(), pemData?.bytes)
+  
+      XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), pem)
+    }
+  }
+  
+  func testImportEncryptedPEM() throws {
+    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED, password: "mypassword")
+    print(rsa)
+  
+    XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED)
+  }
 }
 
 extension RSATests {
