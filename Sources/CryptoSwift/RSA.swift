@@ -20,8 +20,8 @@ import Foundation
 // https://github.com/attaswift/BigInt
 // It allows fast calculation for RSA big numbers
 
-public final class RSA {
-  
+public final class RSA:DERDecodable {
+    
   public enum Error: Swift.Error {
     /// No private key specified
     case noPrivateKey
@@ -31,6 +31,8 @@ public final class RSA {
     case invalidParameters
     case noPrimes
     case unableToCalculateCoefficient
+    case unsupportedCipherAlgorithm([UInt8])
+    case unsupportedPBKDFAlgorithm([UInt8])
   }
   
   /// RSA Modulus
@@ -49,7 +51,7 @@ public final class RSA {
   private let primes:(p:BigUInteger, q:BigUInteger)?
   
   /// RSA Object Identifier Bytes (rsaEncryption)
-  private static var RSA_OBJECT_IDENTIFIER = Array<UInt8>(arrayLiteral: 42, 134, 72, 134, 247, 13, 1, 1, 1)
+  internal static var objectIdentifier = Array<UInt8>(arrayLiteral: 42, 134, 72, 134, 247, 13, 1, 1, 1)
     
   /// Initialize with RSA parameters
   /// - Parameters:
@@ -145,7 +147,7 @@ extension RSA {
   ///   publicExponent    INTEGER,  -- e
   /// }
   /// ```
-  private convenience init(publicDER der: Array<UInt8>) throws {
+  internal convenience init(publicDER der: Array<UInt8>) throws {
     let asn = try ASN1.Parser.parse(data: Data(der))
   
     print("Public DER")
@@ -182,7 +184,7 @@ extension RSA {
   ///   otherPrimeInfos   OtherPrimeInfos OPTIONAL
   /// }
   /// ```
-  private convenience init(privateDER der: Array<UInt8>) throws {
+  internal convenience init(privateDER der: Array<UInt8>) throws {
     let asn = try ASN1.Parser.parse(data: Data(der))
   
     print("Private DER")
@@ -219,41 +221,41 @@ extension RSA {
 extension RSA {
     
   // TODO: Add initializer from PEM (ASN.1 with DER header) (See #892)
-  public convenience init(pem:String, password:String? = nil) throws {
-    // Parse the provided PEM string into it's bytes and type
-    let (type, data) = try RSA.pemToData(pem)
-    print("Type: \(type), Data: \(data.count)")
-    // If we we're provided a password, make sure the PEM is in fact encrypted, otherwise throw an error...
-    if password != nil { guard type == .encryptedPrivateKey else { throw Error.invalidPEMFormat } }
-  
-    // Switch over the PEM type and attempt to instantiate our RSA key
-    switch type {
-    case .publicKeyDER:
-        try self.init(der: data)
-    case .publicKeyPEM:
-        try self.init(publicPEM: data)
-    case .privateKey:
-        try self.init(privatePEM: data)
-    case .encryptedPrivateKey:
-        // Parse out Encryption Strategy and CipherText
-        let encryptionStategy = try RSA.decodeEncryptedPEM(Data(data))
-  
-        // Derive Encryption Key from Password
-        // PBKDF2-SHA1
-        guard let password = password else { throw Error.invalidPEMFormat }
-        let key = try PKCS5.PBKDF2(password: password.bytes, salt: encryptionStategy.salt.bytes, iterations: encryptionStategy.iterations, keyLength: 16, variant: .sha1).calculate()
-  
-        // Decrypt CipherText
-        let aes = try AES(key: key, blockMode: CBC(iv: encryptionStategy.iv.bytes), padding: .noPadding)
-        let decryptedKey = try aes.decrypt(encryptionStategy.ciphertext.bytes)
-  
-        // Init from Raw Representation
-        print(decryptedKey)
-  
-        // Proceed with the unencrypted PEM
-        try self.init(privatePEM: decryptedKey)
-    }
-  }
+//  public convenience init(pem:String, password:String? = nil) throws {
+//    // Parse the provided PEM string into it's bytes and type
+//    let (type, bytes) = try RSA.pemToData(pem)
+//    print("Type: \(type), Data: \(bytes.count)")
+//    // If we we're provided a password, make sure the PEM is in fact encrypted, otherwise throw an error...
+//    if password != nil { guard type == .encryptedPrivateKey else { throw Error.invalidPEMFormat } }
+//  
+//    // Switch over the PEM type and attempt to instantiate our RSA key
+//    switch type {
+//    case .publicKeyDER:
+//        try self.init(der: bytes)
+//    case .publicKeyPEM:
+//        try self.init(publicPEM: bytes)
+//    case .privateKey:
+//        try self.init(privatePEM: bytes)
+//    case .encryptedPrivateKey:
+//        // Ensure we were provided a password
+//        guard let password = password else { throw Error.invalidPEMFormat }
+//        
+//        // Parse out Encryption Strategy and CipherText
+//        let decryptionStategy = try RSA.decodeEncryptedPEM(Data(bytes)) // RSA.decodeEncryptedPEM(Data(bytes))
+//  
+//        // Derive Encryption Key from Password
+//        let key = try decryptionStategy.pbkdfAlgorithm.deriveKey(password: password, ofLength: decryptionStategy.cipherAlgorithm.desiredKeyLength)
+//  
+//        // Decrypt CipherText
+//        let decryptedPEM = try decryptionStategy.cipherAlgorithm.decrypt(bytes: decryptionStategy.ciphertext, withKey: key)
+//  
+//        // Init from Raw Representation
+//        print(decryptedPEM)
+//  
+//        // Proceed with the unencrypted PEM
+//        try self.init(privatePEM: decryptedPEM)
+//    }
+//  }
     
   /// Decodes the provided data into a Public RSA Key
   ///
@@ -312,7 +314,7 @@ extension RSA {
     guard case .bitString(let bits) = sequence.last else { throw Error.invalidPEMFormat }
   
     // Ensure the ObjectID specified in the PEM is rsaEncryption
-    guard objectID.bytes == RSA.RSA_OBJECT_IDENTIFIER else { throw Error.invalidPEMFormat }
+    guard objectID.bytes == RSA.objectIdentifier else { throw Error.invalidPEMFormat }
   
     return bits
   }
@@ -340,7 +342,7 @@ extension RSA {
     guard case .octetString(let octet) = sequence[2] else { throw Error.invalidPEMFormat }
   
     // Ensure the ObjectID specified in the PEM is rsaEncryption
-    guard objectID.bytes == RSA.RSA_OBJECT_IDENTIFIER else { throw Error.invalidPEMFormat }
+    guard objectID.bytes == RSA.objectIdentifier else { throw Error.invalidPEMFormat }
     guard integer == Data(hex: "0x00") else { throw Error.invalidPEMFormat }
   
     return octet
@@ -516,7 +518,7 @@ extension RSA {
     let publicDER = self.publicKeyExternalRepresentation()
     let asnNodes:ASN1.Parser.Node = .sequence(nodes: [
       .sequence(nodes: [
-        .objectIdentifier(data: Data(RSA.RSA_OBJECT_IDENTIFIER)),
+        .objectIdentifier(data: Data(RSA.objectIdentifier)),
         .null
       ]),
       .bitString(data: Data( publicDER ))
@@ -539,7 +541,7 @@ extension RSA {
     let asnNodes:ASN1.Parser.Node = .sequence(nodes: [
       .integer(data: Data(hex: "0x00")),
       .sequence(nodes: [
-        .objectIdentifier(data: Data(RSA.RSA_OBJECT_IDENTIFIER)),
+        .objectIdentifier(data: Data(RSA.objectIdentifier)),
         .null
       ]),
       .octetString(data: Data( privateDER ))
@@ -560,17 +562,17 @@ extension RSA {
 
 // MARK: Encrypted PEM
 extension RSA {
-  struct EncryptedPEM {
-    let salt:Data
-    let iv:Data
-    let iterations:Int
-    let ciphertext:Data
-    let pemID:Data
-    let pbkfd:Data
-    let cipher:Data
+    
+  private struct EncryptedPEM {
+    let ciphertext:[UInt8]
+    let pbkdfAlgorithm:PBKDFAlgorithm
+    let cipherAlgorithm:CipherAlgorithm
+    let objectIdentifer:[UInt8]
   }
     
-  /// Tests importing encrypted PEM private key with a plaintext password
+  /// Decodes an encrypted PEM private key
+  /// - Parameter data: The encrypted pem's data representation
+  /// - Returns: A Decryption Strategy Struct that contains all the information necessary to derive the encryption key and decode the cipher text
   ///
   /// To decrypt an encrypted private RSA key...
   /// 1) Strip the headers of the PEM and base64 decode the data
@@ -594,7 +596,7 @@ extension RSA {
   ///               ])
   ///           ]),
   ///           ASN1.Parser.Node.sequence(nodes: [
-  ///               ASN1.Parser.Node.objectIdentifier(data: 9 bytes),      //des-ede3-cbc [96,134,72,1,101,3,4,1,2]
+  ///               ASN1.Parser.Node.objectIdentifier(data: 9 bytes),      //des-ede3-cbc
   ///               ASN1.Parser.Node.octetString(data: 16 bytes)           //IV
   ///           ])
   ///       ])
@@ -605,58 +607,116 @@ extension RSA {
   private static func decodeEncryptedPEM(_ encryptedPEM:Data) throws -> EncryptedPEM {
     let asn = try ASN1.Parser.parse(data: encryptedPEM)
   
-    var saltData:Data? = nil
-    var ivData:Data? = nil
-    var iterations:Int? = nil
-    var ciphertextData:Data? = nil
+    print(asn)
   
-    var pemID:Data? = nil
-    var keyDerivationID:Data? = nil
-    var cipherID:Data? = nil
+    guard case .sequence(let encryptedPEMWrapper) = asn else { throw Error.invalidPEMFormat }
+    guard encryptedPEMWrapper.count == 2 else { throw Error.invalidPEMFormat }
+    guard case .sequence(let encryptionInfoWrapper) = encryptedPEMWrapper.first else { throw Error.invalidPEMFormat }
+    guard encryptionInfoWrapper.count == 2 else { throw Error.invalidPEMFormat }
+    guard case .objectIdentifier(let objID) = encryptionInfoWrapper.first else { throw Error.invalidPEMFormat }
+    guard case .sequence(let encryptionAlgorithmsWrapper) = encryptionInfoWrapper.last else { throw Error.invalidPEMFormat }
+    guard encryptionAlgorithmsWrapper.count == 2 else { throw Error.invalidPEMFormat }
+    let pbkdf = try decodePBKFD(encryptionAlgorithmsWrapper.first!)
+    let cipher = try decodeCipher(encryptionAlgorithmsWrapper.last!)
+    guard case .octetString(let octets) = encryptedPEMWrapper.last else { throw Error.invalidPEMFormat }
   
-    if case .sequence(let top) = asn {
-      if case .sequence(let top1) = top.first {
-        if case .objectIdentifier(let topID) = top1.first { pemID = topID }
-        if case .sequence(let top2) = top1.last {
-          if case .sequence(let top3) = top2.first {
-            if case .objectIdentifier(let keyID) = top3.first { keyDerivationID = keyID }
-            if case .sequence(let top4) = top3.last {
-              if case .octetString(let salt) = top4.first {
-                saltData = salt
-              }
-              if case .integer(let int) = top4.last {
-                iterations = Int(int.toHexString(), radix: 16)
-              }
-            }
-          }
-          if case .sequence(let bottom3) = top2.last {
-            if case .objectIdentifier(let cipher) = bottom3.first {
-              cipherID = cipher
-            }
-            if case .octetString(let iv) = bottom3.last {
-              ivData = iv
-            }
-          }
-        }
-      }
-      if case .octetString(let cipherText) = top.last {
-        ciphertextData = cipherText
+    return EncryptedPEM(ciphertext: octets.bytes, pbkdfAlgorithm: pbkdf, cipherAlgorithm: cipher, objectIdentifer: objID.bytes)
+  }
+    
+  private enum PBKDFAlgorithm {
+    case pbkdf2(salt: [UInt8], iterations: Int)
+  
+    init(objID:[UInt8], salt:[UInt8], iterations:[UInt8]) throws {
+      guard let iterations = Int(iterations.toHexString(), radix: 16) else { throw Error.invalidPEMFormat }
+      switch objID {
+      case [42, 134, 72, 134, 247, 13, 1, 5, 12]: // pbkdf2
+        self = .pbkdf2(salt: salt, iterations: iterations)
+      default:
+        throw Error.unsupportedPBKDFAlgorithm(objID)
       }
     }
   
-    // Ensure we have everything we need to proceed...
-    guard let saltData = saltData,
-            let ivData = ivData,
-            let iterations = iterations,
-            let ciphertextData = ciphertextData,
-            let pemID = pemID,
-            let keyDerivationID = keyDerivationID,
-            let cipherID = cipherID
-    else {
-        throw Error.invalidPEMFormat
+    func deriveKey(password:String, ofLength keyLength:Int, usingHashVarient variant:HMAC.Variant = .sha1) throws -> [UInt8] {
+      switch self {
+      case .pbkdf2(let salt, let iterations):
+        return try PKCS5.PBKDF2(password: password.bytes, salt: salt, iterations: iterations, keyLength: keyLength, variant: variant).calculate()
+      //default:
+      //    throw Error.invalidPEMFormat
+      }
+    }
+  }
+    
+  /// Expects an ASN1.Node with the following structure
+  ///
+  /// ASN1.Parser.Node.sequence(nodes: [
+  ///     ASN1.Parser.Node.objectIdentifier(data: 9 bytes),      //PBKDF2 //[42,134,72,134,247,13,1,5,12]
+  ///     ASN1.Parser.Node.sequence(nodes: [
+  ///         ASN1.Parser.Node.octetString(data: 8 bytes),       //SALT
+  ///         ASN1.Parser.Node.integer(data: 2 bytes)            //ITTERATIONS
+  ///     ])
+  /// ]),
+  private static func decodePBKFD(_ node:ASN1.Parser.Node) throws -> PBKDFAlgorithm {
+    guard case .sequence(let wrapper) = node else { throw Error.invalidPEMFormat }
+    guard wrapper.count == 2 else { throw Error.invalidPEMFormat }
+    guard case .objectIdentifier(let objID) = wrapper.first else { throw Error.invalidPEMFormat }
+    guard case .sequence(let params) = wrapper.last else { throw Error.invalidPEMFormat }
+    guard params.count == 2 else { throw Error.invalidPEMFormat }
+    guard case .octetString(let salt) = params.first else { throw Error.invalidPEMFormat }
+    guard case .integer(let iterations) = params.last else { throw Error.invalidPEMFormat }
+  
+    return try PBKDFAlgorithm(objID: objID.bytes, salt: salt.bytes, iterations: iterations.bytes)
+  }
+  
+  private enum CipherAlgorithm {
+    case aes_128_cbc(iv:[UInt8])
+    case aes_256_cbc(iv:[UInt8])
+    //case des_ede3_cbc(iv:[UInt8])
+  
+    init(objID:[UInt8], iv:[UInt8]) throws {
+      switch objID {
+      case [0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x02]: // aes-128-cbc
+        self = .aes_128_cbc(iv: iv)
+      case [0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x2a]: // aes-256-cbc
+        self = .aes_256_cbc(iv: iv)
+      default:
+        throw Error.unsupportedCipherAlgorithm(objID)
+      }
     }
   
-    return EncryptedPEM(salt: saltData, iv: ivData, iterations: iterations, ciphertext: ciphertextData, pemID: pemID, pbkfd: keyDerivationID, cipher: cipherID)
+    func decrypt(bytes: [UInt8], withKey key:[UInt8]) throws -> [UInt8] {
+      switch self {
+      case .aes_128_cbc(let iv):
+        return try AES(key: key, blockMode: CBC(iv: iv), padding: .pkcs7).decrypt(bytes)
+      case .aes_256_cbc(let iv):
+        return try AES(key: key, blockMode: CBC(iv: iv), padding: .pkcs7).decrypt(bytes)
+      //default:
+        //throw Error.invalidPEMFormat
+      }
+    }
+  
+    /// The key length used for this Cipher strategy
+    /// - Note: we need this information when deriving the key using our PBKDF strategy
+    var desiredKeyLength:Int {
+      switch self {
+      case .aes_128_cbc: return 16
+      case .aes_256_cbc: return 32
+      }
+    }
+  }
+
+  /// Expects an ASN1.Node with the following structure
+  ///
+  /// ASN1.Parser.Node.sequence(nodes: [
+  ///     ASN1.Parser.Node.objectIdentifier(data: 9 bytes),      //des-ede3-cbc
+  ///     ASN1.Parser.Node.octetString(data: 16 bytes)           //IV
+  /// ])
+  private static func decodeCipher(_ node:ASN1.Parser.Node) throws -> CipherAlgorithm {
+    guard case .sequence(let params) = node else { throw Error.invalidPEMFormat }
+    guard params.count == 2 else { throw Error.invalidPEMFormat }
+    guard case .objectIdentifier(let objID) = params.first else { throw Error.invalidPEMFormat }
+    guard case .octetString(let initialVector) = params.last else { throw Error.invalidPEMFormat }
+  
+    return try CipherAlgorithm(objID: objID.bytes, iv: initialVector.bytes)
   }
 }
 
