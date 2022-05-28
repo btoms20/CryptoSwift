@@ -146,21 +146,13 @@ extension RSA {
   /// ```
   internal convenience init(publicDER der: Array<UInt8>) throws {
     let asn = try ASN1.Parser.parse(data: Data(der))
-  
-    print("Public DER")
-    print(asn)
-  
+    
     // Enforce the above ASN Structure
     guard case .sequence(let params) = asn else { throw Error.invalidDERFormat }
-    print("Params: \(params.count)")
-    print(params)
     guard params.count == 2 else { throw Error.invalidDERFormat }
   
     guard case .integer(let modulus)         = params[0] else { throw Error.invalidDERFormat }
     guard case .integer(let publicExponent)  = params[1] else { throw Error.invalidDERFormat }
-  
-    print("Mod: \(modulus)")
-    print("PubExp: \(publicExponent)")
   
     self.init(n: BigUInteger(modulus), e: BigUInteger(publicExponent))
   }
@@ -183,9 +175,6 @@ extension RSA {
   /// ```
   internal convenience init(privateDER der: Array<UInt8>) throws {
     let asn = try ASN1.Parser.parse(data: Data(der))
-  
-    print("Private DER")
-    print(asn)
   
     // Enforce the above ASN Structure (do we need to extract and verify the eponents and coefficients?)
     guard case .sequence(let params) = asn else { throw Error.invalidDERFormat }
@@ -344,3 +333,15 @@ extension RSA {
   }
 }
 
+
+// MARK: CustomStringConvertible Conformance
+
+extension RSA:CustomStringConvertible {
+    public var description: String {
+        if d != nil {
+            return "CryptoSwift.RSA.PrivateKey<\(self.keySize)>"
+        } else {
+            return "CryptoSwift.RSA.PublicKey<\(self.keySize)>"
+        }
+    }
+}
