@@ -132,6 +132,7 @@ extension BigUInteger {
 }
 
 // MARK: Signatures & Verification
+
 extension RSA {
   public enum SignatureVariant {
     case pkcs1v15_MD5
@@ -143,7 +144,7 @@ extension RSA {
     case pkcs1v15_SHA512_224
     case pkcs1v15_SHA512_256
 
-    var identifier:Array<UInt8> {
+    internal var identifier:Array<UInt8> {
       switch self {
       case .pkcs1v15_MD5       : return Array<UInt8>(arrayLiteral: 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x05)
       case .pkcs1v15_SHA1      : return Array<UInt8>(arrayLiteral: 0x2b, 0x0e, 0x03, 0x02, 0x1a)
@@ -156,7 +157,7 @@ extension RSA {
       }
     }
     
-    func calculateHash(_ bytes: Array<UInt8>) -> Array<UInt8> {
+    internal func calculateHash(_ bytes: Array<UInt8>) -> Array<UInt8> {
       switch self {
       case .pkcs1v15_MD5:
       return Digest.md5(bytes)
@@ -178,7 +179,7 @@ extension RSA {
     }
     
     /// Right now the only Padding Scheme supported is [EMCS-PKCS1v15](https://www.rfc-editor.org/rfc/rfc8017#section-9.2) (others include [EMSA-PSS](https://www.rfc-editor.org/rfc/rfc8017#section-9.1))
-    func pad(bytes: Array<UInt8>, to blockSize:Int) -> Array<UInt8> {
+    internal func pad(bytes: Array<UInt8>, to blockSize:Int) -> Array<UInt8> {
       return Padding.pkcs1v15.add(to: bytes, blockSize: blockSize)
     }
   }
