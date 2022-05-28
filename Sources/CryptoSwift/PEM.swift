@@ -8,29 +8,43 @@
 import Foundation
 
 
+/// Conform to this protocol if your type can be instantiated from a ASN1 DER representation
 protocol DERDecodable {
+    /// The keys ASN1 object identifier (ex: RSA --> rsaEncryption --> [0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01])
     static var objectIdentifier:Array<UInt8> { get }
-    //init(der:Array<UInt8>) throws
-    //init(publicDer: ASN1.Parser.Node) throws
-    //init(privateDer: ASN1.Parser.Node) throws
+    /// Instantiates an instance of your Public Key when given a DER representation of your Public Key
     init(publicDER: Array<UInt8>) throws
+    /// Instantiates an instance of your Private Key when given a DER representation of your Private Key
     init(privateDER: Array<UInt8>) throws
+    /// Instantiates a DERDecodable Key from a PEM string
     init<Key:DERDecodable>(pem: String, password: String?, asType:Key.Type) throws
+    /// Instantiates a DERDecodable Key from ut8 decoded PEM data
     init<Key:DERDecodable>(pem: Data, password: String?, asType:Key.Type) throws
 }
 
 extension DERDecodable {
+    
+  /// Instantiates a DERDecodable Key from a PEM string
+  /// - Parameters:
+  ///   - pem: The PEM file to import
+  ///   - password: A password to use to decrypt an encrypted PEM file
+  ///   - asType: The underlying DERDecodable Key Type (ex: RSA.self)
   init<Key:DERDecodable>(pem: String, password: String? = nil, asType:Key.Type = Key.self) throws {
       try self.init(pem: Data(pem.utf8), password: password, asType: Key.self)
   }
   
+  /// Instantiates a DERDecodable Key from ut8 decoded PEM data
+  /// - Parameters:
+  ///   - pem: The PEM file to import
+  ///   - password: A password to use to decrypt an encrypted PEM file
+  ///   - asType: The underlying DERDecodable Key Type (ex: RSA.self)
   init<Key:DERDecodable>(pem: Data, password: String? = nil, asType:Key.Type = Key.self) throws {
     let (type, bytes) = try PEM.pemToData(pem.bytes)
     
     if password != nil {
       guard type == .encryptedPrivateKey else { throw PEM.Error.invalidParameters }
     }
-      
+    
     switch type {
     case .publicRSAKeyDER:
       // Ensure the objectIdentifier is rsaEncryption
@@ -39,10 +53,10 @@ extension DERDecodable {
       // Ensure the objectIdentifier is rsaEncryption
       try self.init(privateDER: bytes)
     case .publicKey:
-      let der = try PEM.decodePublicPEM(Data(bytes), expectedObjectIdentifier: Key.objectIdentifier)
+      let der = try PEM.decodePublicKeyPEM(Data(bytes), expectedObjectIdentifier: Key.objectIdentifier)
       try self.init(publicDER: der)
     case .privateKey:
-      let der = try PEM.decodePrivatePEM(Data(bytes), expectedObjectIdentifier: Key.objectIdentifier)
+      let der = try PEM.decodePrivateKeyPEM(Data(bytes), expectedObjectIdentifier: Key.objectIdentifier)
       try self.init(privateDER: der)
     case .encryptedPrivateKey:
       // Decrypt the encrypted PEM and attempt to instantiate it again...
@@ -59,79 +73,156 @@ extension DERDecodable {
       // Decrypt CipherText
       let decryptedPEM = try decryptionStategy.cipherAlgorithm.decrypt(bytes: decryptionStategy.ciphertext, withKey: key)
   
-      // Init from Raw Representation
-      //print(decryptedPEM)
-  
       // Proceed with the unencrypted PEM (can public PEM keys be encrypted as well, wouldn't really make sense but idk if we should support it)?
-      let der = try PEM.decodePrivatePEM(Data(decryptedPEM), expectedObjectIdentifier: Key.objectIdentifier)
+      let der = try PEM.decodePrivateKeyPEM(Data(decryptedPEM), expectedObjectIdentifier: Key.objectIdentifier)
       try self.init(privateDER: der)
     }
   }
 }
 
+/// Conform to this protocol if your type can be described in an ASN1 DER representation
 protocol DEREncodable {
+  static var objectIdentifier:Array<UInt8> { get }
+    
   func publicKeyDER() throws -> Array<UInt8>
   func privateKeyDER() throws -> Array<UInt8>
   
   /// PublicKey PEM Export Functions
-  func exportPublicKeyPEM() throws -> Array<UInt8>
-  func exportPublicKeyPEMString() throws -> String
+    func exportPublicKeyPEM(withHeaderAndFooter:Bool) throws -> Array<UInt8>
+  func exportPublicKeyPEMString(withHeaderAndFooter:Bool) throws -> String
   
   /// PrivateKey PEM Export Functions
-  func exportPrivateKeyPEM() throws -> Array<UInt8>
-  func exportPrivateKeyPEMString() throws -> String
+  func exportPrivateKeyPEM(withHeaderAndFooter:Bool) throws -> Array<UInt8>
+  func exportPrivateKeyPEMString(withHeaderAndFooter:Bool) throws -> String
 }
 
 extension DEREncodable {
-  func exportPublicKeyPEM() throws -> Array<UInt8> {
-    throw PEM.Error.invalidPEMFormat
-  }
-  func exportPublicKeyPEMString() throws -> String {
-    throw PEM.Error.invalidPEMFormat
+  func exportPublicKeyPEM(withHeaderAndFooter:Bool = true) throws -> Array<UInt8> {
+    let publicDER = try self.publicKeyDER()
+    let asnNodes:ASN1.Parser.Node = .sequence(nodes: [
+      .sequence(nodes: [
+        .objectIdentifier(data: Data(Self.objectIdentifier)),
+        .null
+      ]),
+      .bitString(data: Data( publicDER ))
+    ])
+  
+    let base64String = ASN1.Encoder.encode(asnNodes).toBase64()
+    let bodyString = base64String.chunks(ofCount: 64).joined(separator: "\n")
+    let bodyUTF8Bytes = bodyString.bytes
+    
+    if withHeaderAndFooter {
+      let header = PEM.PEMType.publicKey.headerBytes + [0x0a]
+      let footer = [0x0a] + PEM.PEMType.publicKey.footerBytes
+    
+      return header + bodyUTF8Bytes + footer
+    } else {
+      return bodyUTF8Bytes
+    }
   }
   
-  func exportPrivateKeyPEM() throws -> Array<UInt8> {
-    throw PEM.Error.invalidPEMFormat
+  func exportPublicKeyPEMString(withHeaderAndFooter:Bool = true) throws -> String {
+    let publicPEMData = try exportPublicKeyPEM(withHeaderAndFooter: withHeaderAndFooter)
+    guard let pemAsString = String(data: Data(publicPEMData), encoding: .utf8) else {
+    throw PEM.Error.encodingError
+    }
+    return pemAsString
   }
-  func exportPrivateKeyPEMString() throws -> String {
-    throw PEM.Error.invalidPEMFormat
+  
+  func exportPrivateKeyPEM(withHeaderAndFooter:Bool = true) throws -> Array<UInt8> {
+    let privateDER = try self.privateKeyDER()
+    let asnNodes:ASN1.Parser.Node = .sequence(nodes: [
+      .integer(data: Data(hex: "0x00")),
+      .sequence(nodes: [
+        .objectIdentifier(data: Data(Self.objectIdentifier)),
+        .null
+      ]),
+      .octetString(data: Data( privateDER ))
+    ])
+      
+    let base64String = ASN1.Encoder.encode(asnNodes).toBase64()
+    let bodyString = base64String.chunks(ofCount: 64).joined(separator: "\n")
+    let bodyUTF8Bytes = bodyString.bytes
+    
+    if withHeaderAndFooter {
+      let header = PEM.PEMType.privateKey.headerBytes + [0x0a]
+      let footer = [0x0a] + PEM.PEMType.privateKey.footerBytes
+    
+      return header + bodyUTF8Bytes + footer
+    } else {
+      return bodyUTF8Bytes
+    }
+  }
+  
+  func exportPrivateKeyPEMString(withHeaderAndFooter:Bool = true) throws -> String {
+    let privatePEMData = try exportPrivateKeyPEM(withHeaderAndFooter: withHeaderAndFooter)
+    guard let pemAsString = String(data: Data(privatePEMData), encoding: .utf8) else {
+      throw PEM.Error.encodingError
+    }
+    return pemAsString
   }
 }
 
+/// Conform to this protocol if your type can both be instantiated and expressed by an ASN1 DER representation.
 protocol DERCodable: DERDecodable, DEREncodable { }
+
+struct DER {
+  /// Integer to Octet String Primitive
+  /// - Parameters:
+  ///   - x: nonnegative integer to be converted
+  ///   - size: intended length of the resulting octet string
+  /// - Returns: corresponding octet string of length xLen
+  /// - Note: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1
+  internal static func i2osp(x:[UInt8], size:Int) -> [UInt8] {
+    var modulus = x
+    while modulus.count < size {
+      modulus.insert(0x00, at: 0)
+    }
+    if modulus[0] >= 0x80 {
+        modulus.insert(0x00, at: 0)
+    }
+    return modulus
+  }
+    
+  /// Integer to Octet String Primitive
+  /// - Parameters:
+  ///   - x: nonnegative integer to be converted
+  ///   - size: intended length of the resulting octet string
+  /// - Returns: corresponding octet string of length xLen
+  /// - Note: https://datatracker.ietf.org/doc/html/rfc3447#section-4.1
+  internal static func i2ospData(x:[UInt8], size:Int) -> Data {
+    return Data(DER.i2osp(x: x, size: size))
+  }
+}
 
 struct PEM {
     
   public enum Error: Swift.Error {
+    /// An error occured while encoding the PEM file
+    case encodingError
+    /// An error occured while decoding the PEM file
+    case decodingError
+    /// Encountered an unsupported PEM type
     case unsupportedPEMType
-    case invalidDERFormat
+    /// Encountered an invalid/unexpected PEM format
     case invalidPEMFormat
+    /// Encountered an invalid/unexpected PEM header string/delimiter
     case invalidPEMHeader
+    /// Encountered an invalid/unexpected PEM footer string/delimiter
     case invalidPEMFooter
+    /// Encountered a invalid/unexpected parameters while attempting to decode a PEM file
     case invalidParameters
-    case unsupportedKeyType
+    /// Encountered an unsupported Cipher algorithm while attempting to decrypt an encrypted PEM file
     case unsupportedCipherAlgorithm([UInt8])
+    /// Encountered an unsupported Password Derivation algorithm while attempting to decrypt an encrypted PEM file
     case unsupportedPBKDFAlgorithm([UInt8])
+    /// The instiating types objectIdentifier does not match that of the PEM file
     case objectIdentifierMismatch(got:[UInt8], expected:[UInt8])
   }
-  
-  /// An enum containing all of the support PEM Key types
-  enum KeyType {
-    case rsaEncryption
-    case encryptedPem
-  
-    init(objectIdentifier:Array<UInt8>) throws {
-      switch objectIdentifier {
-      case Array<UInt8>(arrayLiteral: 0x2A, 0x86, 0x48, 0x86, 0xF7, 0xD, 0x01, 0x01, 0x01):
-        self = .rsaEncryption
-      case Array<UInt8>(arrayLiteral: 0x2A, 0x86, 0x48, 0x86, 0xF7, 0xD, 0x01, 0x05, 0x0D):
-        self = .encryptedPem
-      default:
-        throw Error.unsupportedKeyType
-      }
-    }
-  }
     
+  // MARK: Add support for additional PEM types here
+    
+  /// General PEM Classification
   internal enum PEMType {
     // Direct DER Exports for RSA Keys (special case)
     case publicRSAKeyDER
@@ -142,7 +233,7 @@ struct PEM {
     case privateKey
     case encryptedPrivateKey
   
-    // others
+    // Others
     //case certificate
   
     init(headerBytes: ArraySlice<UInt8>) throws {
@@ -174,33 +265,35 @@ struct PEM {
       }
     }
   
-    var headerBytes:String {
+    /// This PEM type's header string (expressed as the utf8 decoded byte representation)
+    var headerBytes:Array<UInt8> {
       switch self {
       case .publicRSAKeyDER:
-        return "-----BEGIN RSA PUBLIC KEY-----"
+          return "-----BEGIN RSA PUBLIC KEY-----".bytes
       case .privateRSAKeyDER:
-        return "-----BEGIN RSA PRIVATE KEY-----"
+          return "-----BEGIN RSA PRIVATE KEY-----".bytes
       case .publicKey:
-        return "-----BEGIN PUBLIC KEY-----"
+          return "-----BEGIN PUBLIC KEY-----".bytes
       case .privateKey:
-        return "-----BEGIN PRIVATE KEY-----"
+          return "-----BEGIN PRIVATE KEY-----".bytes
       case .encryptedPrivateKey:
-        return "-----BEGIN ENCRYPTED PRIVATE KEY-----"
+          return "-----BEGIN ENCRYPTED PRIVATE KEY-----".bytes
       }
     }
 
-    var footerBytes:String {
+    /// This PEM type's footer string (expressed as the utf8 decoded byte representation)
+    var footerBytes:Array<UInt8> {
       switch self {
       case .publicRSAKeyDER:
-        return "-----END RSA PUBLIC KEY-----"
+          return "-----END RSA PUBLIC KEY-----".bytes
       case .privateRSAKeyDER:
-        return "-----END RSA PRIVATE KEY-----"
+          return "-----END RSA PRIVATE KEY-----".bytes
       case .publicKey:
-        return "-----END PUBLIC KEY-----"
+          return "-----END PUBLIC KEY-----".bytes
       case .privateKey:
-        return "-----END PRIVATE KEY-----"
+          return "-----END PRIVATE KEY-----".bytes
       case .encryptedPrivateKey:
-        return "-----END ENCRYPTED PRIVATE KEY-----"
+          return "-----END ENCRYPTED PRIVATE KEY-----".bytes
       }
     }
   }
@@ -209,39 +302,35 @@ struct PEM {
   /// - Parameter data: The `UTF8` encoding of the PEM file
   /// - Returns: A tuple containing the PEMType, and the actual base64 decoded PEM data (with the headers and footers removed).
   internal static func pemToData(_ data:Array<UInt8>) throws -> (type: PEMType, bytes: Array<UInt8>) {
-    let fiveDashes = ArraySlice<UInt8>(arrayLiteral: 0x2D, 0x2D, 0x2D, 0x2D, 0x2D) // "-----".bytes.toHexString()
-    let chunks = data.split(separator: 0x0a)
+    let fiveDashes = ArraySlice<UInt8>(repeating: 0x2D, count: 5) // "-----".bytes.toHexString()
+    let chunks = data.split(separator: 0x0a) // 0x0a == "\n" `new line` char
     guard chunks.count > 2 else { throw PEM.Error.invalidPEMFormat }
   
-    /// Enforce a valid PEM header
+    // Enforce a valid PEM header
     guard let header = chunks.first,
       header.count > 10,
       header.prefix(5) == fiveDashes,
       header.suffix(5) == fiveDashes else {
-        print("Header: \(Array<UInt8>(chunks.first ?? []).toHexString())")
         throw PEM.Error.invalidPEMHeader
     }
   
-    /// Enforce a valid PEM footer
+    // Enforce a valid PEM footer
     guard let footer = chunks.last,
       footer.count > 10,
       footer.prefix(5) == fiveDashes,
       footer.suffix(5) == fiveDashes else {
-        print("Footer: \(Array<UInt8>(chunks.last ?? []).toHexString()))")
         throw PEM.Error.invalidPEMFooter
     }
   
-    /// Attempt to classify the PEMType based on the header
-    ///
-    /// - Note: This just gives us a general idea of what direction to head in. Headers that don't match the underlying data will throw an Error
+    // Attempt to classify the PEMType based on the header
+    //
+    // - Note: This just gives us a general idea of what direction to head in. Headers that don't match the underlying data will end up throwing an Error later
     let pemType:PEMType = try PEMType(headerBytes: header)
   
-    /// join the data (is this correct? dont we have to convert from base64Encoded at some point?)
     guard let base64 = String(data: Data(chunks[1..<chunks.count-1].joined()), encoding: .utf8) else { throw Error.invalidPEMFormat }
     guard let pemData = Data(base64Encoded: base64) else { throw Error.invalidPEMFormat }
-    //let pemData = Data(chunks[1..<chunks.count-1].joined())
   
-    /// return the PEMType and PEM Data (without header & footer)
+    // return the PEMType and PEM Data (without header & footer)
     return (type: pemType, bytes: pemData.bytes)
   }
     
@@ -258,12 +347,9 @@ struct PEM {
   /// 17:d=2  hl=2 l=   0 prim:   NULL
   /// 19:d=1  hl=4 l= 527 prim:  BIT STRING
   /// ```
-  internal static func decodePublicPEM(_ pem:Data, expectedObjectIdentifier:Array<UInt8>) throws -> Array<UInt8> {
+  internal static func decodePublicKeyPEM(_ pem:Data, expectedObjectIdentifier:Array<UInt8>) throws -> Array<UInt8> {
     let asn = try ASN1.Parser.parse(data: pem)
-  
-    print("Public PEM")
-    print(asn)
-  
+    
     // Enforce the above ASN1 Structure
     guard case .sequence(let sequence) = asn else { throw Error.invalidPEMFormat }
     guard sequence.count == 2 else { throw Error.invalidPEMFormat }
@@ -293,11 +379,8 @@ struct PEM {
   /// 20:d=2  hl=2 l=   0 prim:   NULL
   /// 22:d=1  hl=4 l= 608 prim:  OCTET STRING      [HEX DUMP]:3082...AA50
   /// ```
-  internal static func decodePrivatePEM(_ pem:Data, expectedObjectIdentifier:Array<UInt8>) throws -> Array<UInt8> {
+  internal static func decodePrivateKeyPEM(_ pem:Data, expectedObjectIdentifier:Array<UInt8>) throws -> Array<UInt8> {
     let asn = try ASN1.Parser.parse(data: pem)
-  
-    print("Private PEM")
-    print(asn)
   
     // Enforce the above ASN1 Structure
     guard case .sequence(let sequence) = asn else { throw Error.invalidPEMFormat }
@@ -319,6 +402,7 @@ struct PEM {
 
 
 // MARK: Encrypted PEM
+
 extension PEM {
     
   fileprivate struct EncryptedPEM {
@@ -363,9 +447,7 @@ extension PEM {
   /// ```
   fileprivate static func decodeEncryptedPEM(_ encryptedPEM:Data) throws -> EncryptedPEM {
     let asn = try ASN1.Parser.parse(data: encryptedPEM)
-  
-    print(asn)
-  
+    
     guard case .sequence(let encryptedPEMWrapper) = asn else { throw Error.invalidPEMFormat }
     guard encryptedPEMWrapper.count == 2 else { throw Error.invalidPEMFormat }
     guard case .sequence(let encryptionInfoWrapper) = encryptedPEMWrapper.first else { throw Error.invalidPEMFormat }
@@ -379,7 +461,13 @@ extension PEM {
   
     return EncryptedPEM(objectIdentifer: objID.bytes, ciphertext: octets.bytes, pbkdfAlgorithm: pbkdf, cipherAlgorithm: cipher)
   }
-    
+}
+
+
+// MARK: Encrypted PEM PBKDF Algorithms
+
+extension PEM {
+  // MARK: Add support for new PBKDF Algorithms here...
   fileprivate enum PBKDFAlgorithm {
     case pbkdf2(salt: [UInt8], iterations: Int)
   
@@ -402,7 +490,7 @@ extension PEM {
       }
     }
   }
-    
+  
   /// Decodes the PBKDF ASN1 Block in an Encrypted Private Key PEM file
   /// - Parameter node: The ASN1 sequence node containing the pbkdf parameters
   /// - Returns: The PBKDFAlogrithm if supported
@@ -428,11 +516,16 @@ extension PEM {
   
     return try PBKDFAlgorithm(objID: objID.bytes, salt: salt.bytes, iterations: iterations.bytes)
   }
-  
+}
+
+
+// MARK: Encrypted PEM Cipher Algorithms
+
+extension PEM {
+  // MARK: Add support for new Cipher Algorithms here...
   fileprivate enum CipherAlgorithm {
     case aes_128_cbc(iv:[UInt8])
     case aes_256_cbc(iv:[UInt8])
-    //case des_ede3_cbc(iv:[UInt8])
   
     init(objID:[UInt8], iv:[UInt8]) throws {
       switch objID {
@@ -465,7 +558,7 @@ extension PEM {
       }
     }
   }
-
+  
   /// Decodes the Cipher ASN1 Block in an Encrypted Private Key PEM file
   /// - Parameter node: The ASN1 sequence node containing the cipher parameters
   /// - Returns: The CipherAlogrithm if supported
