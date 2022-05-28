@@ -189,56 +189,20 @@ final class RSATests: XCTestCase {
     let decrypted = try! rsa.decrypt(try! rsa.encrypt(message))
     XCTAssertEqual(decrypted, message, "encrypt+decrypt failed")
   }
-
-//  func testSignature_1024_PKCS1v15_SHA256() throws {
-//    let expectedEncryption: Array<UInt8> = [
-//      0x76, 0xEB, 0x7F, 0x10, 0x95, 0x40, 0xC9, 0x19, 0xE6, 0x44, 0x6F, 0xCD, 0x88, 0x83, 0x22, 0x6E,
-//      0x5C, 0xE4, 0x1E, 0x87, 0xE3, 0xAF, 0x3B, 0x59, 0xB7, 0xB2, 0x89, 0xFD, 0x88, 0x37, 0xC0, 0xCE,
-//      0xEA, 0x0E, 0x87, 0x06, 0x5F, 0x6E, 0xE7, 0x8C, 0xE9, 0x3F, 0xD6, 0xC3, 0xE0, 0x0B, 0x94, 0x19,
-//      0xAC, 0x58, 0x2D, 0x73, 0xD3, 0x92, 0x45, 0x2C, 0x66, 0x7F, 0xB5, 0x24, 0xC6, 0xEA, 0xC6, 0xE2,
-//      0x0E, 0xBB, 0x12, 0x86, 0x5B, 0xF4, 0x1D, 0x25, 0x2F, 0x68, 0x69, 0x30, 0x80, 0x4D, 0x10, 0xDF,
-//      0x25, 0x5E, 0x00, 0x1D, 0x2F, 0x5F, 0x67, 0xE5, 0x4C, 0x7D, 0x1E, 0x64, 0xB2, 0x0B, 0xE8, 0x19,
-//      0xE6, 0xB8, 0x62, 0xA6, 0xD1, 0x66, 0x58, 0x47, 0xAC, 0xAB, 0xAB, 0xCD, 0x26, 0x3D, 0x16, 0x52,
-//      0xBF, 0x35, 0xB0, 0x21, 0xE2, 0xE3, 0x48, 0x77, 0x1E, 0x81, 0xE8, 0xCF, 0x75, 0x67, 0x64, 0x2A
-//    ]
-//
-//    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE)
-//    XCTAssertNotNil(rsa.d)
-//
-//    let encrypted = try rsa.sign("Hello RSA Signatures! This message was signed with PKCS1v15 padding and hashed with SHA256.".bytes, variant: .pkcs1v15_SHA256)
-//
-//    XCTAssertEqual(encrypted, expectedEncryption)
-//  }
-    
     
   // MARK: PEM & DER Tests
   func testImportPublicDER() throws {
-    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PUBLIC_DER, asType: RSA.self)
+    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PUBLIC_DER)
     print(rsa)
   
     let base64 = PEMFixtures.RSA_1024_PUBLIC_DER.split(separator: "\n").dropFirst().dropLast().joined()
     let derData = Data(base64Encoded: base64)
-    XCTAssertEqual(rsa.publicKeyExternalRepresentation(), derData?.bytes)
+    XCTAssertEqual(try rsa.publicKeyDER(), derData?.bytes)
+      
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PUBLIC_DER.dropFirst())))
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PUBLIC_DER.dropLast())))
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PUBLIC_DER.shuffled())))
   }
-  
-    func testDERDecodableAutoInit() throws {
-        //let key = try RSA(pem: PEMFixtures.RSA_1024_PUBLIC, asType: RSA.self)
-        
-//      print("publicRSAKeyDER")
-//      print("-----BEGIN RSA PUBLIC KEY-----".bytes.toHexString())
-//
-//      print("privateRSAKeyDER")
-//      print("-----BEGIN RSA PRIVATE KEY-----".bytes.toHexString())
-//
-//      print("publicKey")
-//      print("-----BEGIN PUBLIC KEY-----".bytes.toHexString())
-//
-//      print("privateKey")
-//      print("-----BEGIN PRIVATE KEY-----".bytes.toHexString())
-//
-//      print("encryptedPrivateKey")
-      print("-----BEGIN ENCRYPTED PRIVATE KEY-----".bytes.toHexString())
-    }
     
   func testImportPublicPEM() throws {
     let publicPEMS = [
@@ -251,11 +215,15 @@ final class RSATests: XCTestCase {
     for pem in publicPEMS {
       let rsa = try RSA(pem: pem, asType: RSA.self)
 
-      let base64 = pem.split(separator: "\n").dropFirst().dropLast().joined()
-      let pemData = Data(base64Encoded: base64)
-      XCTAssertEqual(try rsa.exportPublicKeyPEM(), pemData?.bytes)
+      let base64 = pem.split(separator: "\n").dropFirst().dropLast().joined(separator: "\n")
+      let pemData = Data(base64.utf8)
+      XCTAssertEqual(try rsa.exportPublicKeyPEM(withHeaderAndFooter: false), pemData.bytes)
 
       XCTAssertEqual(try rsa.exportPublicKeyPEMString(), pem)
+      
+      XCTAssertThrowsError(try RSA(pem: String(pem.dropFirst())))
+      XCTAssertThrowsError(try RSA(pem: String(pem.dropLast())))
+      XCTAssertThrowsError(try RSA(pem: String(pem.shuffled())))
     }
   }
   
@@ -271,64 +239,77 @@ final class RSATests: XCTestCase {
       let rsa = try RSA(pem: pem, asType: RSA.self)
       XCTAssertNotNil(rsa.d)
 
-      let base64 = pem.split(separator: "\n").dropFirst().dropLast().joined()
-      let pemData = Data(base64Encoded: base64)
-      XCTAssertEqual(try rsa.exportPrivateKeyPEM(), pemData?.bytes)
+      let base64 = pem.split(separator: "\n").dropFirst().dropLast().joined(separator: "\n")
+      let pemData = Data(base64.utf8)
+      XCTAssertEqual(try rsa.exportPrivateKeyPEM(withHeaderAndFooter: false), pemData.bytes)
 
       XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), pem)
+    
+      XCTAssertThrowsError(try RSA(pem: String(pem.dropFirst())))
+      XCTAssertThrowsError(try RSA(pem: String(pem.dropLast())))
+      XCTAssertThrowsError(try RSA(pem: String(pem.shuffled())))
     }
   }
 
   func testImportEncryptedPEM() throws {
-    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED, password: "mypassword", asType: RSA.self)
+    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED, password: "mypassword")
     print(rsa)
 
     XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED)
 
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED, password: "mypassword", asType: RSA.self))
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED, password: "wrongpassword", asType: RSA.self))
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED, asType: RSA.self))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED, password: "mypassword"))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED, password: "wrongpassword"))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED))
+      
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED.dropFirst())))
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED.dropLast())))
   }
 
   func testImportEncryptedPEM_1024() throws {
-    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD, password: "mypassword", asType: RSA.self)
+    let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD, password: "mypassword")
     XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED)
 
-    let rsaEmptyPwd = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_EMPTY_PASSWORD, password: "", asType: RSA.self)
+    let rsaEmptyPwd = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_EMPTY_PASSWORD, password: "")
     XCTAssertEqual(try rsaEmptyPwd.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED)
 
-    let rsaEmojiPwd = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_EMOJI_PASSWORD, password: "🔐", asType: RSA.self)
+    let rsaEmojiPwd = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_EMOJI_PASSWORD, password: "🔐")
     XCTAssertEqual(try rsaEmojiPwd.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED)
 
-    let rsaAES256 = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD_AES_256_CBC, password: "mypassword", asType: RSA.self)
+    let rsaAES256 = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD_AES_256_CBC, password: "mypassword")
     XCTAssertEqual(try rsaAES256.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED)
 
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED, password: "mypassword", asType: RSA.self))
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD, password: "wrongpassword", asType: RSA.self))
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD, asType: RSA.self))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED, password: "mypassword"))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD, password: "wrongpassword"))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD))
+      
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED.dropFirst())))
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED.dropLast())))
   }
 
   func testsImportEncryptedPEM_1024_AES_256_CBC() throws {
-    let rsaAES256 = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD_AES_256_CBC, password: "mypassword", asType: RSA.self)
+    let rsaAES256 = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD_AES_256_CBC, password: "mypassword")
     XCTAssertEqual(try rsaAES256.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED)
   }
 
   func testImportEncryptedPEM_4096() throws {
-    let rsa = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD, password: "mypassword", asType: RSA.self)
+    let rsa = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD, password: "mypassword")
     XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED)
 
-    let rsaEmptyPwd = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_EMPTY_PASSWORD, password: "", asType: RSA.self)
+    let rsaEmptyPwd = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_EMPTY_PASSWORD, password: "")
     XCTAssertEqual(try rsaEmptyPwd.exportPrivateKeyPEMString(), PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED)
 
-    let rsaEmojiPwd = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_EMOJI_PASSWORD, password: "🔐", asType: RSA.self)
+    let rsaEmojiPwd = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_EMOJI_PASSWORD, password: "🔐")
     XCTAssertEqual(try rsaEmojiPwd.exportPrivateKeyPEMString(), PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED)
 
-    let rsaAES256 = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD_AES_256_CBC, password: "mypassword", asType: RSA.self)
+    let rsaAES256 = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD_AES_256_CBC, password: "mypassword")
     XCTAssertEqual(try rsaAES256.exportPrivateKeyPEMString(), PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED)
 
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED, password: "mypassword", asType: RSA.self))
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD, password: "wrongpassword", asType: RSA.self))
-    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD, asType: RSA.self))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED, password: "mypassword"))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD, password: "wrongpassword"))
+    XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD))
+      
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED.dropFirst())))
+    XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED.dropLast())))
   }
 }
 
