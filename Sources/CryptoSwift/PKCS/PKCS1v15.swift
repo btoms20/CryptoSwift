@@ -13,10 +13,6 @@
 //  - This notice may not be removed or altered from any source or binary distribution.
 //
 
-//  PKCS is a group of public-key cryptography standards devised
-//  and published by RSA Security Inc, starting in the early 1990s.
-//
-
 struct PKCS1v15Padding: PaddingProtocol {
   enum Error: Swift.Error {
     case invalidPaddingValue
@@ -45,7 +41,7 @@ struct PKCS1v15Padding: PaddingProtocol {
       return bytes
     }
       
-      let padding = (bytes.dropFirst(2).firstIndex(of: 0x00) ?? bytes.count) + 2
+    let padding = (bytes.dropFirst(2).firstIndex(of: 0x00) ?? bytes.count) + 2
       
     let finalLength = bytes.count - padding
 

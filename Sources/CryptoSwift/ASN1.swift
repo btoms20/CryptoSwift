@@ -12,13 +12,12 @@
 //  - Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
 //  - This notice may not be removed or altered from any source or binary distribution.
 //
-//  Original Asn1Parser.swift by SwiftyRSA
+//  Original Asn1Parser.swift from SwiftyRSA
 //
 //  Created by Lois Di Qual on 5/9/17.
 //  Copyright © 2017 Scoop. All rights reserved.
 //
 //  Modified by Brandon Toms on 5/1/22
-//
 
 import Foundation
 
