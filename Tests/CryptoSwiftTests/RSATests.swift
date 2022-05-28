@@ -193,12 +193,12 @@ final class RSATests: XCTestCase {
   // MARK: PEM & DER Tests
   func testImportPublicDER() throws {
     let rsa = try RSA(pem: PEMFixtures.RSA_1024_PUBLIC_DER)
-    print(rsa)
-  
+    XCTAssertNil(rsa.d)
+      
     let base64 = PEMFixtures.RSA_1024_PUBLIC_DER.split(separator: "\n").dropFirst().dropLast().joined()
     let derData = Data(base64Encoded: base64)
     XCTAssertEqual(try rsa.publicKeyDER(), derData?.bytes)
-      
+    
     XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PUBLIC_DER.dropFirst())))
     XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PUBLIC_DER.dropLast())))
     XCTAssertThrowsError(try RSA(pem: String(PEMFixtures.RSA_1024_PUBLIC_DER.shuffled())))
@@ -214,7 +214,8 @@ final class RSATests: XCTestCase {
 
     for pem in publicPEMS {
       let rsa = try RSA(pem: pem, asType: RSA.self)
-
+      XCTAssertNil(rsa.d)
+        
       let base64 = pem.split(separator: "\n").dropFirst().dropLast().joined(separator: "\n")
       let pemData = Data(base64.utf8)
       XCTAssertEqual(try rsa.exportPublicKeyPEM(withHeaderAndFooter: false), pemData.bytes)
@@ -253,8 +254,8 @@ final class RSATests: XCTestCase {
 
   func testImportEncryptedPEM() throws {
     let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED, password: "mypassword")
-    print(rsa)
-
+    XCTAssertNotNil(rsa.d)
+    
     XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED)
 
     XCTAssertThrowsError(try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED, password: "mypassword"))
@@ -267,6 +268,8 @@ final class RSATests: XCTestCase {
 
   func testImportEncryptedPEM_1024() throws {
     let rsa = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD, password: "mypassword")
+    XCTAssertNotNil(rsa.d)
+    
     XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED)
 
     let rsaEmptyPwd = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_EMPTY_PASSWORD, password: "")
@@ -288,11 +291,14 @@ final class RSATests: XCTestCase {
 
   func testsImportEncryptedPEM_1024_AES_256_CBC() throws {
     let rsaAES256 = try RSA(pem: PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.ENCRYPTED_MYPASSWORD_AES_256_CBC, password: "mypassword")
+    XCTAssertNotNil(rsaAES256.d)
     XCTAssertEqual(try rsaAES256.exportPrivateKeyPEMString(), PEMFixtures.RSA_1024_PRIVATE_ENCRYPTED_PAIR_2.UNENCRYPTED)
   }
 
   func testImportEncryptedPEM_4096() throws {
     let rsa = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_MYPASSWORD, password: "mypassword")
+    XCTAssertNotNil(rsa.d)
+    
     XCTAssertEqual(try rsa.exportPrivateKeyPEMString(), PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.UNENCRYPTED)
 
     let rsaEmptyPwd = try RSA(pem: PEMFixtures.RSA_4096_PRIVATE_ENCRYPTED_PAIR.ENCRYPTED_EMPTY_PASSWORD, password: "")
