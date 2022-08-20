@@ -193,7 +193,33 @@ final class RSATests: XCTestCase {
       XCTFail(error.localizedDescription)
     }
   }
+  
+  func testCoreCount() {
+    // 1024 - average: 9.322, relative standard deviation: 55.700%, values: [8.263894, 7.654859, 4.704789, 17.379465, 4.305660, 20.737034, 8.967908, 4.776570, 8.816217, 7.609796]
+    // 2048 - average: 125.932, relative standard deviation: 79.631%, values: [30.021073, 332.439024, 194.392489, 77.590729, 275.286430, 37.434624, 65.932304, 43.923627, 100.564550, 101.730811]
+    //measure {
+    //  let rsa = try! RSA(keySize: 2048)
+    //  XCTAssertNotNil(rsa.d)
+    //}
+    
+    // 1024 - average 4.733, relative standard deviation: 25.854%, values: [4.909963, 3.072137, 5.472606, 5.561615, 7.564448, 3.389256, 3.790335, 4.515703, 4.299032, 4.750065]
+    // 2048 - average: 46.097, relative standard deviation: 64.622%, values: [35.553193, 37.396966, 32.849476, 62.370574, 24.967909, 23.871019, 36.369190, 21.080181, 125.949265, 60.564701]
+    measure {
+      let primes = MultithreadedPrimeGeneration(numberOfPrimes: 2, size: 1024/2).generate()
+      print(primes)
+      XCTAssertTrue(primes.count == 2)
+    }
+    
+    // 512 - system.count - average: 1.044, relative standard deviation: 12.172%, values: [1.089145, 0.986570, 0.877062, 0.979841, 1.202567, 1.081926, 0.969481, 1.295256, 0.878471, 1.084599]
+    
+  //    print(System.coreCount)
+  //
+  //    let primes = MultithreadedPrimeGeneration(numberOfPrimes: 2).generate()
+  //
+  //    print(primes)
+  }
 }
+
 
 extension RSATests {
   static func allTests() -> [(String, (RSATests) -> () -> Void)] {

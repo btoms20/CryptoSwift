@@ -75,9 +75,12 @@ public final class RSA {
   /// - Parameter keySize: The size of the modulus
   public convenience init(keySize: Int) throws {
     // Generate prime numbers
-    let p = BigUInteger.generatePrime(keySize / 2)
-    let q = BigUInteger.generatePrime(keySize / 2)
-
+    //let p = BigUInteger.generatePrime(keySize / 2)
+    //let q = BigUInteger.generatePrime(keySize / 2)
+    let primes = MultithreadedPrimeGeneration(numberOfPrimes: 2, size: keySize / 2).generate()
+    let p = primes.first!
+    let q = primes.last!
+    
     // Calculate modulus
     let n = p * q
 
@@ -137,16 +140,136 @@ extension RSA: Cipher {
 
 // MARK: CS.BigUInt extension
 
-extension BigUInteger {
+//extension BigUInteger {
 
-  public static func generatePrime(_ width: Int) -> BigUInteger {
-    // Note: Need to find a better way to generate prime numbers
-    while true {
-      var random = BigUInteger.randomInteger(withExactWidth: width)
-      random |= BigUInteger(1)
-      if random.isPrime() {
-        return random
+//  public static func generatePrime(_ width: Int) -> BigUInteger {
+//    // Note: Need to find a better way to generate prime numbers
+//    while true {
+//      var random = BigUInteger.randomInteger(withExactWidth: width)
+//      random |= BigUInteger(1)
+//      if random.isPrime() {
+//        return random
+//      }
+//    }
+//  }
+  
+  internal class MultithreadedPrimeGeneration {
+    let numberOfPrimes:Int
+    let size:Int
+    
+    private var group:[Thread] = []
+    private var isDone:Bool = false
+    private var primesGenerated:[BigUInteger] {
+      didSet {
+        if primesGenerated.count >= numberOfPrimes {
+          self.isDone = true
+          self.group.forEach { $0.cancel() }
+          self.group = []
+        }
+      }
+    }
+    
+    init(numberOfPrimes:Int = 2, size:Int) {
+      self.numberOfPrimes = numberOfPrimes
+      self.size = size
+      self.primesGenerated = []
+    }
+    
+    public func generate() -> [BigUInteger] {
+      guard System.coreCount != 1 else {
+        print("Single Core")
+        return (0..<numberOfPrimes).map { _ in generatePrime(self.size) }
+      }
+      print("Launching [\(System.coreCount)] Threads in search of Primes!")
+      self.startMulti()
+      while !isDone { usleep(100_000) }
+      usleep(250_000)
+      return Array(primesGenerated.prefix(numberOfPrimes))
+    }
+    
+    public func startMulti() {
+      group = (0..<System.coreCount).map { _ in
+        Thread {
+          while !self.isDone {
+            if let prime = self.searchForPrime(self.size) { self.primesGenerated.append(prime) }
+          }
+        }
+      }
+      group.forEach { $0.start() }
+    }
+    
+    private func searchForPrime(_ width: Int) -> BigUInteger? {
+      while !self.isDone {
+        var random = BigUInteger.randomInteger(withExactWidth: width)
+        random |= BigUInteger(1)
+        if random.isPrime() {
+          return random
+        }
+      }
+      return nil
+    }
+    
+    private func generatePrime(_ width: Int) -> BigUInteger {
+      while true {
+        var random = BigUInteger.randomInteger(withExactWidth: width)
+        random |= BigUInteger(1)
+        if random.isPrime() {
+          return random
+        }
       }
     }
   }
-}
+  
+  private enum System {
+      /// A utility function that returns an estimate of the number of *logical* cores
+      /// on the system.
+      ///
+      /// This value can be used to help provide an estimate of how many threads to use with
+      /// the `MultiThreadedEventLoopGroup`. The exact ratio between this number and the number
+      /// of threads to use is a matter for the programmer, and can be determined based on the
+      /// specific execution behaviour of the program.
+      ///
+      /// - returns: The logical core count on the system.
+      public static var coreCount: Int {
+  #if os(Windows)
+          var dwLength: DWORD = 0
+          _ = GetLogicalProcessorInformation(nil, &dwLength)
+
+          let alignment: Int =
+              MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.alignment
+          let pBuffer: UnsafeMutableRawPointer =
+              UnsafeMutableRawPointer.allocate(byteCount: Int(dwLength),
+                                               alignment: alignment)
+          defer {
+              pBuffer.deallocate()
+          }
+
+          let dwSLPICount: Int =
+              Int(dwLength) / MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.stride
+          let pSLPI: UnsafeMutablePointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> =
+              pBuffer.bindMemory(to: SYSTEM_LOGICAL_PROCESSOR_INFORMATION.self,
+                                 capacity: dwSLPICount)
+
+          let bResult: Bool = GetLogicalProcessorInformation(pSLPI, &dwLength)
+          precondition(bResult, "GetLogicalProcessorInformation: \(GetLastError())")
+
+          return UnsafeBufferPointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>(start: pSLPI,
+                                                                           count: dwSLPICount)
+              .filter { $0.Relationship == RelationProcessorCore }
+              .map { $0.ProcessorMask.nonzeroBitCount }
+              .reduce(0, +)
+  #elseif os(Linux) || os(Android)
+          if let quota = Linux.coreCount(quota: Linux.cfsQuotaPath, period: Linux.cfsPeriodPath) {
+              return quota
+          } else if let cpusetCount = Linux.coreCount(cpuset: Linux.cpuSetPath) {
+              return cpusetCount
+          } else {
+              return sysconf(CInt(_SC_NPROCESSORS_ONLN))
+          }
+  #else
+          return sysconf(CInt(_SC_NPROCESSORS_ONLN))
+  #endif
+      }
+  }
+  
+//}
