@@ -14,7 +14,15 @@
 //
 
 // Foundation is required for `Data` to be found
+#if os(Linux) || os(FreeBSD) || os(Android)
+import CNIOLinux
+import Glibc
+#elseif os(Windows)
+
+#elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+import Darwin
 import Foundation
+#endif
 
 // Note: The `BigUInt` struct was copied from:
 // https://github.com/attaswift/BigInt
