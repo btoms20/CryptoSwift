@@ -14,15 +14,7 @@
 //
 
 // Foundation is required for `Data` to be found
-#if os(Linux) || os(FreeBSD) || os(Android)
-import CNIOLinux
-import Glibc
-#elseif os(Windows)
-
-#elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-import Darwin
 import Foundation
-#endif
 
 // Note: The `BigUInt` struct was copied from:
 // https://github.com/attaswift/BigInt
@@ -81,11 +73,11 @@ public final class RSA {
 
   /// Initialize with a generated key pair
   /// - Parameter keySize: The size of the modulus
-  public convenience init(keySize: Int) throws {
+  public convenience init(keySize: Int, threads:Int = 1) throws {
     // Generate prime numbers
     //let p = BigUInteger.generatePrime(keySize / 2)
     //let q = BigUInteger.generatePrime(keySize / 2)
-    let primes = MultithreadedPrimeGeneration(numberOfPrimes: 2, size: keySize / 2).generate()
+    let primes = MultithreadedPrimeGeneration(numberOfPrimes: 2, size: keySize / 2, threadCount: threads).generate()
     let p = primes.first!
     let q = primes.last!
     
@@ -164,6 +156,7 @@ extension RSA: Cipher {
   internal class MultithreadedPrimeGeneration {
     let numberOfPrimes:Int
     let size:Int
+    let threadCount:Int
     
     private var group:[Thread] = []
     private var isDone:Bool = false
@@ -177,18 +170,19 @@ extension RSA: Cipher {
       }
     }
     
-    init(numberOfPrimes:Int = 2, size:Int) {
+    init(numberOfPrimes:Int = 2, size:Int, threadCount:Int = 1) {
       self.numberOfPrimes = numberOfPrimes
       self.size = size
+      self.threadCount = threadCount
       self.primesGenerated = []
     }
     
     public func generate() -> [BigUInteger] {
-      guard System.coreCount != 1 else {
-        print("Single Core")
+      guard threadCount != 1 else {
+        print("Single Thread")
         return (0..<numberOfPrimes).map { _ in generatePrime(self.size) }
       }
-      print("Launching [\(System.coreCount)] Threads in search of Primes!")
+      print("Launching [\(threadCount)] Threads in search of Primes!")
       self.startMulti()
       while !isDone { usleep(100_000) }
       usleep(250_000)
@@ -196,7 +190,7 @@ extension RSA: Cipher {
     }
     
     public func startMulti() {
-      group = (0..<System.coreCount).map { _ in
+      group = (0..<threadCount).map { _ in
         Thread {
           while !self.isDone {
             if let prime = self.searchForPrime(self.size) { self.primesGenerated.append(prime) }
@@ -228,56 +222,115 @@ extension RSA: Cipher {
     }
   }
   
-  private enum System {
-      /// A utility function that returns an estimate of the number of *logical* cores
-      /// on the system.
-      ///
-      /// This value can be used to help provide an estimate of how many threads to use with
-      /// the `MultiThreadedEventLoopGroup`. The exact ratio between this number and the number
-      /// of threads to use is a matter for the programmer, and can be determined based on the
-      /// specific execution behaviour of the program.
-      ///
-      /// - returns: The logical core count on the system.
-      public static var coreCount: Int {
-  #if os(Windows)
-          var dwLength: DWORD = 0
-          _ = GetLogicalProcessorInformation(nil, &dwLength)
-
-          let alignment: Int =
-              MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.alignment
-          let pBuffer: UnsafeMutableRawPointer =
-              UnsafeMutableRawPointer.allocate(byteCount: Int(dwLength),
-                                               alignment: alignment)
-          defer {
-              pBuffer.deallocate()
-          }
-
-          let dwSLPICount: Int =
-              Int(dwLength) / MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.stride
-          let pSLPI: UnsafeMutablePointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> =
-              pBuffer.bindMemory(to: SYSTEM_LOGICAL_PROCESSOR_INFORMATION.self,
-                                 capacity: dwSLPICount)
-
-          let bResult: Bool = GetLogicalProcessorInformation(pSLPI, &dwLength)
-          precondition(bResult, "GetLogicalProcessorInformation: \(GetLastError())")
-
-          return UnsafeBufferPointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>(start: pSLPI,
-                                                                           count: dwSLPICount)
-              .filter { $0.Relationship == RelationProcessorCore }
-              .map { $0.ProcessorMask.nonzeroBitCount }
-              .reduce(0, +)
-  #elseif os(Linux) || os(Android)
-          if let quota = Linux.coreCount(quota: Linux.cfsQuotaPath, period: Linux.cfsPeriodPath) {
-              return quota
-          } else if let cpusetCount = Linux.coreCount(cpuset: Linux.cpuSetPath) {
-              return cpusetCount
-          } else {
-              return sysconf(CInt(_SC_NPROCESSORS_ONLN))
-          }
-  #else
-          return sysconf(CInt(_SC_NPROCESSORS_ONLN))
-  #endif
-      }
-  }
+//  private enum System {
+//      /// A utility function that returns an estimate of the number of *logical* cores
+//      /// on the system.
+//      ///
+//      /// This value can be used to help provide an estimate of how many threads to use with
+//      /// the `MultiThreadedEventLoopGroup`. The exact ratio between this number and the number
+//      /// of threads to use is a matter for the programmer, and can be determined based on the
+//      /// specific execution behaviour of the program.
+//      ///
+//      /// - returns: The logical core count on the system.
+//      public static var coreCount: Int {
+//  #if os(Windows)
+//          var dwLength: DWORD = 0
+//          _ = GetLogicalProcessorInformation(nil, &dwLength)
+//
+//          let alignment: Int =
+//              MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.alignment
+//          let pBuffer: UnsafeMutableRawPointer =
+//              UnsafeMutableRawPointer.allocate(byteCount: Int(dwLength),
+//                                               alignment: alignment)
+//          defer {
+//              pBuffer.deallocate()
+//          }
+//
+//          let dwSLPICount: Int =
+//              Int(dwLength) / MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.stride
+//          let pSLPI: UnsafeMutablePointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> =
+//              pBuffer.bindMemory(to: SYSTEM_LOGICAL_PROCESSOR_INFORMATION.self,
+//                                 capacity: dwSLPICount)
+//
+//          let bResult: Bool = GetLogicalProcessorInformation(pSLPI, &dwLength)
+//          precondition(bResult, "GetLogicalProcessorInformation: \(GetLastError())")
+//
+//          return UnsafeBufferPointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>(start: pSLPI,
+//                                                                           count: dwSLPICount)
+//              .filter { $0.Relationship == RelationProcessorCore }
+//              .map { $0.ProcessorMask.nonzeroBitCount }
+//              .reduce(0, +)
+//  #elseif os(Linux) || os(Android)
+////          if let quota = Linux.coreCount(quota: Linux.cfsQuotaPath, period: Linux.cfsPeriodPath) {
+////              return quota
+////          } else if let cpusetCount = Linux.coreCount(cpuset: Linux.cpuSetPath) {
+////              return cpusetCount
+////          } else {
+//              return sysconf(CInt(_SC_NPROCESSORS_ONLN))
+////          }
+//  #else
+//          return sysconf(CInt(_SC_NPROCESSORS_ONLN))
+//  #endif
+//      }
+//  }
   
 //}
+
+
+//#if os(Linux) || os(Android)
+//import CNIOLinux
+//enum Linux {
+//    static let cfsQuotaPath = "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"
+//    static let cfsPeriodPath = "/sys/fs/cgroup/cpu/cpu.cfs_period_us"
+//    static let cpuSetPath = "/sys/fs/cgroup/cpuset/cpuset.cpus"
+//
+//    private static func firstLineOfFile(path: String) throws -> Substring {
+//        let fh = try NIOFileHandle(path: path)
+//        defer { try! fh.close() }
+//        // linux doesn't properly report /sys/fs/cgroup/* files lengths so we use a reasonable limit
+//        var buf = ByteBufferAllocator().buffer(capacity: 1024)
+//        try buf.writeWithUnsafeMutableBytes(minimumWritableBytes: buf.capacity) { ptr in
+//            let res = try fh.withUnsafeFileDescriptor { fd -> CoreIOResult<ssize_t> in
+//                return try SystemCalls.read(descriptor: fd, pointer: ptr.baseAddress!, size: ptr.count)
+//            }
+//            switch res {
+//            case .processed(let n):
+//                return n
+//            case .wouldBlock:
+//                preconditionFailure("read returned EWOULDBLOCK despite a blocking fd")
+//            }
+//        }
+//        return String(buffer: buf).prefix(while: { $0 != "\n" })
+//    }
+//
+//    private static func countCoreIds(cores: Substring) -> Int {
+//        let ids = cores.split(separator: "-", maxSplits: 1)
+//        guard
+//            let first = ids.first.flatMap({ Int($0, radix: 10) }),
+//            let last = ids.last.flatMap({ Int($0, radix: 10) }),
+//            last >= first
+//        else { preconditionFailure("cpuset format is incorrect") }
+//        return 1 + last - first
+//    }
+//
+//    static func coreCount(cpuset cpusetPath: String) -> Int? {
+//        guard
+//            let cpuset = try? firstLineOfFile(path: cpusetPath).split(separator: ","),
+//            !cpuset.isEmpty
+//        else { return nil }
+//        return cpuset.map(countCoreIds).reduce(0, +)
+//    }
+//
+//    static func coreCount(quota quotaPath: String,  period periodPath: String) -> Int? {
+//        guard
+//            let quota = try? Int(firstLineOfFile(path: quotaPath)),
+//            quota > 0
+//        else { return nil }
+//        guard
+//            let period = try? Int(firstLineOfFile(path: periodPath)),
+//            period > 0
+//        else { return nil }
+//        return (quota - 1 + period) / period // always round up if fractional CPU quota requested
+//    }
+//}
+//#endif
