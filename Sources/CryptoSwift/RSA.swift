@@ -185,6 +185,7 @@ extension RSA: Cipher {
       print("Launching [\(threadCount)] Threads in search of Primes!")
       self.startMulti()
       while !isDone { usleep(100_000) }
+      // Give the threads a chance to shutdown before we return...
       usleep(250_000)
       return Array(primesGenerated.prefix(numberOfPrimes))
     }
@@ -200,6 +201,7 @@ extension RSA: Cipher {
       group.forEach { $0.start() }
     }
     
+    /// Searches for a prime as long as isDone is false
     private func searchForPrime(_ width: Int) -> BigUInteger? {
       while !self.isDone {
         var random = BigUInteger.randomInteger(withExactWidth: width)
@@ -211,6 +213,7 @@ extension RSA: Cipher {
       return nil
     }
     
+    /// Searches for a prime until it finds one
     private func generatePrime(_ width: Int) -> BigUInteger {
       while true {
         var random = BigUInteger.randomInteger(withExactWidth: width)
@@ -222,6 +225,8 @@ extension RSA: Cipher {
     }
   }
   
+// *** Stolen from SwiftNIO ***
+
 //  private enum System {
 //      /// A utility function that returns an estimate of the number of *logical* cores
 //      /// on the system.
@@ -273,7 +278,7 @@ extension RSA: Cipher {
 //  #endif
 //      }
 //  }
-  
+//
 //}
 
 
