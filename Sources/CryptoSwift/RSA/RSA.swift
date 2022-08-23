@@ -20,7 +20,12 @@ import Foundation
 // https://github.com/attaswift/BigInt
 // It allows fast calculation for RSA big numbers
 
-public final class RSA: DERCodable {
+public final class RSA: PEMCodable {
+  /// The keys PKCS8 primary object identifier (ex: RSA --> rsaEncryption --> [0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01])
+  static var primaryObjectIdentifier: PEM.ObjectIdentifier = .objectIdentifier(PEM.ObjectIdentifier.rsaEncryption)
+  /// The keys PKCS8 secondary object identifier (ex: RSA --> .null)
+  static var secondaryObjectIdentifier: PEM.ObjectIdentifier = .null
+  
   /// RSA Key Errors
   public enum Error: Swift.Error {
     /// No private key specified
