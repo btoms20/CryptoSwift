@@ -204,10 +204,11 @@ final class RSATests: XCTestCase {
     
     // 1024 - average 4.733, relative standard deviation: 25.854%, values: [4.909963, 3.072137, 5.472606, 5.561615, 7.564448, 3.389256, 3.790335, 4.515703, 4.299032, 4.750065]
     // 2048 - average: 46.097, relative standard deviation: 64.622%, values: [35.553193, 37.396966, 32.849476, 62.370574, 24.967909, 23.871019, 36.369190, 21.080181, 125.949265, 60.564701]
+    //let metric = XCTMemoryMetric()
+    //measure(metrics: [metric], block: {
     measure {
-      let primes = MultithreadedPrimeGeneration(numberOfPrimes: 2, size: 1024/2).generate()
+      let primes = MultithreadedPrimeGeneration(numberOfPrimes: 2, size: 1024/2, threadCount: 8).generate(new: false)
       print(primes)
-      XCTAssertTrue(primes.count == 2)
     }
     
     // 512 - system.count - average: 1.044, relative standard deviation: 12.172%, values: [1.089145, 0.986570, 0.877062, 0.979841, 1.202567, 1.081926, 0.969481, 1.295256, 0.878471, 1.084599]
