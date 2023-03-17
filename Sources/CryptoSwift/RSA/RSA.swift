@@ -479,9 +479,9 @@ internal class MultithreadedPrimeGeneration {
     }
     print("Launching [\(threadCount)] Threads in search of Primes!")
     self.startMulti()
-    while !isDone { usleep(100_000) }
+    while !isDone { Thread.sleep(forTimeInterval: 0.1) } //usleep(100_000) }
     // Give the threads a chance to shutdown before we return...
-    usleep(250_000)
+    Thread.sleep(forTimeInterval: 0.25)
     return Array(primesGenerated.prefix(numberOfPrimes))
   }
 
