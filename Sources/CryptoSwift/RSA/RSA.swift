@@ -114,11 +114,11 @@ public final class RSA: DERCodable {
 
   /// Initialize with a generated key pair
   /// - Parameter keySize: The size of the modulus
-  public convenience init(keySize: Int) throws {
+  public convenience init(keySize: Int, threads:Int? = nil) throws {
     guard keySize >= 128 else { throw Error.invalidPrimes }
 
     // Generate prime numbers
-    let primes = MultithreadedPrimeGeneration(size: keySize / 2).generate()
+    let primes = MultithreadedPrimeGeneration(size: keySize / 2, threadCount: threads).generate()
     let p = primes[0] //BigUInteger.generatePrime(keySize / 2)
     let q = primes[1] //BigUInteger.generatePrime(keySize / 2)
 
