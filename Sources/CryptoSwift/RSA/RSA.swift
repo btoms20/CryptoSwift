@@ -14,6 +14,27 @@
 //
 
 // Foundation is required for `Data` to be found
+#if os(Linux) || os(FreeBSD) || os(Android)
+  import Glibc
+#elseif os(Windows)
+  import let WinSDK.RelationProcessorCore
+
+  import let WinSDK.AF_UNSPEC
+  import let WinSDK.ERROR_SUCCESS
+
+  import func WinSDK.GetAdaptersAddresses
+  import func WinSDK.GetLastError
+  import func WinSDK.GetLogicalProcessorInformation
+
+  import struct WinSDK.IP_ADAPTER_ADDRESSES
+  import struct WinSDK.IP_ADAPTER_UNICAST_ADDRESS
+  import struct WinSDK.SYSTEM_LOGICAL_PROCESSOR_INFORMATION
+  import struct WinSDK.ULONG
+
+  import typealias WinSDK.DWORD
+#elseif os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+  import Darwin
+#endif
 import Foundation
 
 // Note: The `BigUInt` struct was copied from:
@@ -94,9 +115,12 @@ public final class RSA: DERCodable {
   /// Initialize with a generated key pair
   /// - Parameter keySize: The size of the modulus
   public convenience init(keySize: Int) throws {
+    guard keySize >= 128 else { throw Error.invalidPrimes }
+
     // Generate prime numbers
-    let p = BigUInteger.generatePrime(keySize / 2)
-    let q = BigUInteger.generatePrime(keySize / 2)
+    let primes = MultithreadedPrimeGeneration(size: keySize / 2).generate()
+    let p = primes[0] //BigUInteger.generatePrime(keySize / 2)
+    let q = primes[1] //BigUInteger.generatePrime(keySize / 2)
 
     // Calculate modulus
     let n = p * q
@@ -419,5 +443,138 @@ extension RSA: CustomStringConvertible {
     } else {
       return "CryptoSwift.RSA.PublicKey<\(self.keySize)>"
     }
+  }
+}
+
+internal class MultithreadedPrimeGeneration {
+  let numberOfPrimes: Int
+  let size: Int
+  let threadCount: Int
+
+  private static var one = BigUInteger(1)
+  private var group: [Thread] = []
+  private var isDone: Bool = false
+  private var primesGenerated: [BigUInteger] {
+    didSet {
+      if primesGenerated.count >= numberOfPrimes {
+        self.isDone = true
+        self.group.forEach { $0.cancel() }
+        self.group = []
+      }
+    }
+  }
+
+  init(numberOfPrimes: Int = 2, size: Int, threadCount: Int? = nil) {
+    self.numberOfPrimes = numberOfPrimes
+    self.size = size
+    // Constrain the threads to use between 1 and 8
+    self.threadCount = max(min(threadCount ?? System.coreCount, 8), 1)
+    self.primesGenerated = []
+  }
+
+  public func generate(new: Bool = false) -> [BigUInteger] {
+    guard threadCount != 1 else {
+      print("Single Thread")
+      return (0..<numberOfPrimes).map { _ in generatePrime(self.size) }
+    }
+    print("Launching [\(threadCount)] Threads in search of Primes!")
+    self.startMulti()
+    while !isDone { usleep(100_000) }
+    // Give the threads a chance to shutdown before we return...
+    usleep(250_000)
+    return Array(primesGenerated.prefix(numberOfPrimes))
+  }
+
+  private func startMulti() {
+    group = (0..<threadCount).map { _ in
+      Thread {
+        while !self.isDone {
+          if let prime = self.searchForPrime(self.size) { self.primesGenerated.append(prime) }
+        }
+      }
+    }
+    group.forEach { $0.start() }
+  }
+
+  /// Searches for a prime as long as isDone is false
+  /// This is slower...
+//  private func searchForPrimeNew(_ width: Int) -> BigUInteger? {
+//    var random = BigUInteger.randomInteger(withExactWidth: self.size)
+//    var rng = SystemRandomNumberGenerator()
+//    while !self.isDone {
+//      random = BigUInteger.randomInteger(withExactWidth: width, using: &rng) | MultithreadedPrimeGeneration.one
+//      if random.isPrime() {
+//        return random
+//      }
+//    }
+//    return nil
+//  }
+
+  /// Searches for a prime as long as isDone is false
+  private func searchForPrime(_ width: Int) -> BigUInteger? {
+    while !self.isDone {
+      var random = BigUInteger.randomInteger(withExactWidth: width)
+      random |= BigUInteger(1)
+      if random.isPrime() {
+        return random
+      }
+    }
+    return nil
+  }
+
+  /// Searches for a prime until it finds one
+  private func generatePrime(_ width: Int) -> BigUInteger {
+    while true {
+      var random = BigUInteger.randomInteger(withExactWidth: width)
+      random |= BigUInteger(1)
+      if random.isPrime() {
+        return random
+      }
+    }
+  }
+}
+
+// *** Stolen from SwiftNIO ***
+private enum System {
+  /// A utility function that returns an estimate of the number of *logical* cores
+  /// on the system.
+  ///
+  /// This value can be used to help provide an estimate of how many threads to use with
+  /// the `MultiThreadedEventLoopGroup`. The exact ratio between this number and the number
+  /// of threads to use is a matter for the programmer, and can be determined based on the
+  /// specific execution behaviour of the program.
+  ///
+  /// - returns: The logical core count on the system.
+  public static var coreCount: Int {
+    #if os(Windows)
+      var dwLength: DWORD = 0
+      _ = GetLogicalProcessorInformation(nil, &dwLength)
+
+      let alignment: Int =
+        MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.alignment
+      let pBuffer: UnsafeMutableRawPointer =
+        UnsafeMutableRawPointer.allocate(byteCount: Int(dwLength),
+                                         alignment: alignment)
+      defer {
+        pBuffer.deallocate()
+      }
+
+      let dwSLPICount: Int =
+        Int(dwLength) / MemoryLayout<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>.stride
+      let pSLPI: UnsafeMutablePointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> =
+        pBuffer.bindMemory(to: SYSTEM_LOGICAL_PROCESSOR_INFORMATION.self,
+                           capacity: dwSLPICount)
+
+      let bResult: Bool = GetLogicalProcessorInformation(pSLPI, &dwLength)
+      precondition(bResult, "GetLogicalProcessorInformation: \(GetLastError())")
+
+      return UnsafeBufferPointer<SYSTEM_LOGICAL_PROCESSOR_INFORMATION>(start: pSLPI,
+                                                                       count: dwSLPICount)
+        .filter { $0.Relationship == RelationProcessorCore }
+        .map { $0.ProcessorMask.nonzeroBitCount }
+        .reduce(0, +)
+    #else
+      return sysconf(CInt(_SC_NPROCESSORS_ONLN))
+    #endif
   }
 }
