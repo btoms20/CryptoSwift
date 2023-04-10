@@ -1,7 +1,7 @@
 //
 //  CryptoSwift
 //
-//  Copyright (C) 2014-2021 Marcin Krzyżanowski <marcin@krzyzanowskim.com>
+//  Copyright (C) 2014-2022 Marcin Krzyżanowski <marcin@krzyzanowskim.com>
 //  This software is provided 'as-is', without any express or implied warranty.
 //
 //  In no event will the authors be held liable for any damages arising from the use of this software.
@@ -66,6 +66,7 @@ extension RSA: Cipher {
 extension RSA {
   /// RSA Encryption Block Types
   /// - [RFC2313 8.1 - Encryption block formatting](https://datatracker.ietf.org/doc/html/rfc2313#section-8.1)
+  @frozen
   public enum RSAEncryptionVariant {
     /// The `unsafe` encryption variant, is fully deterministic and doesn't format the inbound data in any way.
     ///
