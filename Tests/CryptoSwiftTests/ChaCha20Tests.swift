@@ -107,7 +107,6 @@ final class ChaCha20Tests: XCTestCase {
     }
   }
 
-
   /// Test Vector - https://datatracker.ietf.org/doc/html/rfc9001#name-chacha20-poly1305-short-hea
   func testChaCha20ExplicitCounterV1() throws {
     let hpKey = Array(hex: "0x25a282b9e82f06f21f488917a4fc8f1b73573685608597d0efcb076b0ab7a7a4")
